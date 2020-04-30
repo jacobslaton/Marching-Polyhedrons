@@ -24,15 +24,15 @@ public class MarchingVertex : MonoBehaviour
 			Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
 			if (Physics.Raycast(ray, out hit) && hit.collider.gameObject.name == name)
 			{
-				SetState(!filled);
+				ToggleState();
 				transform.parent.GetComponent<MarchingPolyhedron>().CalculateMesh();
 			}
 		}
 	}
 
-	public void SetState(bool state)
+	public void ToggleState()
 	{
-		filled = state;
+		filled = !filled;
 		GetComponent<Renderer>().material.color = filled ? Color.white : Color.black;
 		foreach (KeyValuePair<int, GameObject> entry in edges)
 			entry.Value.GetComponent<Renderer>().enabled = !entry.Value.GetComponent<Renderer>().enabled;

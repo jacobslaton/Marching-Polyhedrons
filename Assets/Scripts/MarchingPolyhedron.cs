@@ -12,18 +12,6 @@ public class ArrayWrapper<T>
 	public ArrayWrapper(T[] items) { this.items = items; }
 }
 
-public class TrianglePermutation
-{
-	private List<List<int>> triangles;
-
-	public TrianglePermutation(List<List<int>> triangles)
-	{
-		this.triangles = new List<List<int>>();
-		foreach (List<int> tri in triangles)
-			this.triangles.Add(new List<int>(tri));
-	}
-}
-
 [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
 public class MarchingPolyhedron : MonoBehaviour
 {
@@ -40,21 +28,56 @@ public class MarchingPolyhedron : MonoBehaviour
 		geometricVertices = new List<Vector3>();
 		geometricEdges = new List<Vector3>();
 		GeneratePolyhedron();
-		//GenerateTriangulationTable();
-		//WriteTriangulationTable();
+		GenerateTriangulationTable();
+		WriteTriangulationTable();
 	}
 
+	// Build Triangulation Table
 	private void GenerateTriangulationTable()
 	{
 		triangulationTable = new int[1 << vertexObjects.Count][];
 		for (int tti = 0; tti < triangulationTable.Length; ++tti)
 		{
-			// Calculate mesh given current vertices
-
-			vertexObjects[0].GetComponent<MarchingVertex>().SetState(true);
+			vertexObjects[0].GetComponent<MarchingVertex>().ToggleState();
 			for (int voi = 0; voi < vertexObjects.Count; ++voi)
-				vertexObjects[voi].GetComponent<MarchingVertex>().SetState((tti & (1 << voi)) == 1 << voi);
+			{
+				bool state = (tti & (1 << voi)) == 1 << voi;
+				if (vertexObjects[voi].GetComponent<MarchingVertex>().filled != state)
+					vertexObjects[voi].GetComponent<MarchingVertex>().ToggleState();
+			}
+
+			// Calculate mesh given current vertices
+			triangulationTable[tti] = CalculateGlobalTriangleIndices();
 		}
+	}
+
+	private int[] CalculateGlobalTriangleIndices()
+	{
+		List<List<int>> edgeLoops = CalculateEdgeLoops();
+		List<List<List<int>>> globalTriangles = new List<List<List<int>>>();
+
+		int triangleCount = 0;
+		for (int eli = 0; eli < edgeLoops.Count; ++eli)
+		{
+			// Find all permutations
+			List<List<List<int>>> permutations = CalculateTrianglePermutations(edgeLoops[eli]);
+
+			// Find correct permutation
+			List<List<int>> correct = permutations[permutations.Count-1];
+			globalTriangles.Add(correct);
+
+			triangleCount += correct.Count;
+		}
+
+		int[] globalTriangleIndices = new int[3*triangleCount];
+		for (int gti = 0, mti = 0; gti < globalTriangles.Count; ++gti)
+			for (int gtli = 0; gtli < globalTriangles[gti].Count; ++gtli)
+			{
+				globalTriangles[gti][gtli] = CorrectTriangleChirality(globalTriangles[gti][gtli]);
+				for (int ti = 0; ti < globalTriangles[gti][gtli].Count; ++ti, ++mti)
+					globalTriangleIndices[mti] = globalTriangles[gti][gtli][ti];
+			}
+		return globalTriangleIndices;
 	}
 
 	// Save and Load Triangulation Table
@@ -147,14 +170,13 @@ public class MarchingPolyhedron : MonoBehaviour
 	}
 
 	// Calculate Mesh
-	public /*IEnumerator*/ void CalculateMesh()
+	public void CalculateMesh()
 	{
 		List<List<int>> edgeLoops = CalculateEdgeLoops();
 		List<List<List<int>>> globalTriangles = new List<List<List<int>>>();
 
 		int vertexCount = 0;
 		int triangleCount = 0;
-		string foo = "";
 		for (int eli = 0; eli < edgeLoops.Count; ++eli)
 		{
 			// Find all permutations
@@ -166,27 +188,7 @@ public class MarchingPolyhedron : MonoBehaviour
 
 			vertexCount += edgeLoops[eli].Count;
 			triangleCount += correct.Count;
-
-			// Debug
-			string bar = permutations.Count.ToString()+" "+vertexCount.ToString()+"\n";
-			for (int ii = 0; ii < permutations.Count; ++ii)
-			{
-				for (int jj = 0; jj < permutations[ii].Count; ++jj)
-				{
-					bar += "( ";
-					for (int kk = 0; kk < permutations[ii][jj].Count; ++kk)
-						bar += permutations[ii][jj][kk].ToString()+" ";
-					bar += ") ";
-				}
-				bar += "\n";
-			}
-			Debug.Log(bar);
-
-			for (int li = 0; li < edgeLoops[eli].Count; ++li)
-				 foo += edgeLoops[eli][li]+" ";
-			foo += "\n";
 		}
-		Debug.Log(foo);
 
 		// If there are no vertices, then clear the mesh
 		//vertexCount = (from ii in edgeLoops select ii.Count).ToList().Sum();
@@ -194,35 +196,20 @@ public class MarchingPolyhedron : MonoBehaviour
 		{
 			GetComponent<MeshFilter>().mesh.Clear();
 			return;
-			// yield break;
 		}
 
 		Vector3[] meshVertices = CalculateVertices(edgeLoops, vertexCount);
 		int[] meshTriangles = new int[3*triangleCount];
 
-		foo = "";
 		for (int gti = 0, mti = 0; gti < globalTriangles.Count; ++gti)
-		{
 			for (int gtli = 0; gtli < globalTriangles[gti].Count; ++gtli)
 			{
 				globalTriangles[gti][gtli] = CorrectTriangleChirality(globalTriangles[gti][gtli]);
 				for (int ti = 0; ti < globalTriangles[gti][gtli].Count; ++ti, ++mti)
-				{
 					meshTriangles[mti] = Array.FindIndex(meshVertices, ii => ii == geometricEdges[globalTriangles[gti][gtli][ti]]);
-					foo += meshTriangles[mti].ToString()+" ";
-				}
 			}
-		}
-		Debug.Log(foo);
 
 		SetMesh(meshVertices, meshTriangles);
-
-		/*
-		Vector3[] meshVertices = CalculateVertices(edgeLoops, vertexCount);
-		int[] meshTriangles = CalculateTriangles(edgeLoops, vertexCount, meshVertices);
-		SetMesh(meshVertices, meshTriangles);
-		//yield return new WaitForSeconds(1.0f);
-		*/
 	}
 
 	private Vector3[] CalculateVertices(List<List<int>> edgeLoops, int vertexCount)
